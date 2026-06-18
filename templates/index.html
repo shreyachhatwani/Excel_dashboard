@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIS Excel Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.32.0/plotly.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b0d12;--s1:#12151c;--s2:#1a1e27;--s3:#222734;
+  --bd:#2c3145;--bd2:#394060;
+  --t1:#eceef5;--t2:#8890a8;--t3:#4a5168;
+  --acc:#5b7cff;--acc2:#4466ee;
+  --grn:#2dd4a0;--ora:#f97316;--red:#f56060;--pur:#9d7dfa;
+  --r:10px;--rl:16px;--sw:260px;--tr:0.16s ease;
+}
+html{font-size:14px}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--t1);line-height:1.6;min-height:100vh;overflow-x:hidden}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--s1)}
+::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:99px}
+.app{display:flex;min-height:100vh}
+.sidebar{width:var(--sw);min-width:var(--sw);background:var(--s1);border-right:1px solid var(--bd);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sb-logo{padding:24px 20px 18px;border-bottom:1px solid var(--bd)}
+.sb-logo .icon{width:34px;height:34px;background:linear-gradient(135deg,var(--acc),var(--pur));border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:10px}
+.sb-logo h1{font-size:.92rem;font-weight:600;letter-spacing:-.01em}
+.sb-logo p{font-size:.72rem;color:var(--t3);margin-top:2px}
+.sb-sec{padding:18px 20px;border-bottom:1px solid var(--bd)}
+.sb-sec-title{font-size:.65rem;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--t3);margin-bottom:12px}
+.fg{margin-bottom:12px}
+.fg:last-child{margin-bottom:0}
+.fg label{display:block;font-size:.72rem;color:var(--t2);margin-bottom:5px;font-weight:500}
+select,input[type=number]{width:100%;background:var(--s3);border:1px solid var(--bd);color:var(--t1);font-family:'Inter',sans-serif;font-size:.8rem;padding:7px 10px;border-radius:var(--r);outline:none;transition:border-color var(--tr);cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%234a5168' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 9px center;padding-right:26px}
+select:focus{border-color:var(--acc)}
+select option{background:var(--s3)}
+.nav{padding:14px 20px;flex:1}
+.nav-lbl{font-size:.65rem;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--t3);margin-bottom:10px}
+.nt{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r);font-size:.8rem;color:var(--t2);cursor:pointer;margin-bottom:2px;transition:all var(--tr);user-select:none;border:none;background:none;width:100%;text-align:left}
+.nt:hover{background:var(--s2);color:var(--t1)}
+.nt.active{background:rgba(91,124,255,.13);color:var(--acc);font-weight:500}
+.nt .ico{width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.nt .bdg{margin-left:auto;background:var(--s3);font-size:.62rem;color:var(--t3);padding:1px 6px;border-radius:99px;font-family:'JetBrains Mono',monospace}
+.nt.active .bdg{background:rgba(91,124,255,.2);color:var(--acc)}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{background:var(--s1);border-bottom:1px solid var(--bd);padding:0 28px;height:56px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100}
+.tb-title{font-size:.86rem;font-weight:600}
+.tb-sub{font-size:.74rem;color:var(--t3)}
+.tb-sp{flex:1}
+.pill{display:flex;align-items:center;gap:5px;background:var(--s2);border:1px solid var(--bd);border-radius:99px;padding:4px 11px;font-size:.72rem;color:var(--t2)}
+.pill strong{color:var(--t1);font-weight:600;font-family:'JetBrains Mono',monospace;font-size:.76rem}
+.content{padding:28px;flex:1}
+.init-screen{max-width:480px;margin:60px auto 0;text-align:center}
+.init-screen .wico{font-size:48px;margin-bottom:16px;display:block;filter:drop-shadow(0 0 20px rgba(91,124,255,.35))}
+.init-screen h2{font-size:1.4rem;font-weight:600;letter-spacing:-.02em;margin-bottom:8px}
+.init-screen p{font-size:.86rem;color:var(--t2);line-height:1.7}
+.init-screen .err{color:var(--red);font-size:.82rem;margin-top:12px;background:rgba(245,96,96,.08);border:1px solid rgba(245,96,96,.2);border-radius:var(--r);padding:10px 14px}
+.sec{display:none}
+.sec.active{display:block}
+.sec-hdr{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+.sec-hdr h2{font-size:1.05rem;font-weight:600;letter-spacing:-.01em}
+.sec-hdr p{font-size:.74rem;color:var(--t3);margin-top:2px}
+.sec-bdg{background:rgba(91,124,255,.12);color:var(--acc);font-size:.67rem;font-weight:600;padding:2px 9px;border-radius:99px;margin-left:auto;font-family:'JetBrains Mono',monospace}
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:var(--rl);padding:22px;margin-bottom:18px}
+.card-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+.card-title{font-size:.82rem;font-weight:600}
+.card-sub{font-size:.7rem;color:var(--t3);margin-top:3px}
+.insight{font-size:.73rem;color:var(--grn);background:rgba(45,212,160,.08);border:1px solid rgba(45,212,160,.2);border-radius:6px;padding:6px 10px;margin-top:8px}
+.ctrls{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px;padding:14px;background:var(--s2);border:1px solid var(--bd);border-radius:var(--r)}
+.cg{display:flex;flex-direction:column;gap:3px;min-width:130px;flex:1}
+.cg label{font-size:.68rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em}
+.btn-run{align-self:flex-end;background:var(--acc);color:#fff;border:none;border-radius:var(--r);padding:7px 18px;font-size:.78rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:background var(--tr),transform var(--tr);white-space:nowrap}
+.btn-run:hover{background:var(--acc2);transform:translateY(-1px)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:900px){.g2{grid-template-columns:1fr}}
+.cw{min-height:300px;border-radius:var(--r);overflow:hidden}
+.cw.tall{min-height:380px}
+.dtbl{width:100%;border-collapse:collapse;font-size:.77rem}
+.dtbl th{background:var(--s2);color:var(--t3);font-size:.67rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:9px 12px;text-align:left;border-bottom:1px solid var(--bd)}
+.dtbl td{padding:9px 12px;border-bottom:1px solid var(--bd);color:var(--t1);font-family:'JetBrains Mono',monospace;font-size:.74rem}
+.dtbl tr:last-child td{border-bottom:none}
+.dtbl tr:hover td{background:var(--s2)}
+.exp{background:var(--s1);border:1px solid var(--bd);border-radius:var(--rl);margin-bottom:18px;overflow:hidden}
+.exp-hdr{padding:12px 18px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-size:.8rem;font-weight:500;color:var(--t2);user-select:none;transition:background var(--tr)}
+.exp-hdr:hover{background:var(--s2)}
+.exp-chev{transition:transform var(--tr);font-size:10px;color:var(--t3)}
+.exp.open .exp-chev{transform:rotate(180deg)}
+.exp-body{display:none;border-top:1px solid var(--bd);overflow:auto;max-height:300px}
+.exp.open .exp-body{display:block}
+.loading{display:none;position:fixed;inset:0;background:rgba(11,13,18,.72);z-index:999;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+.loading.show{display:flex}
+.lbox{background:var(--s1);border:1px solid var(--bd);border-radius:var(--rl);padding:30px 36px;text-align:center}
+.spin{width:34px;height:34px;border:2.5px solid var(--bd2);border-top-color:var(--acc);border-radius:50%;animation:spin .65s linear infinite;margin:0 auto 14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.lbox p{font-size:.82rem;color:var(--t2)}
+.lbox strong{display:block;font-size:.9rem;margin-bottom:5px}
+.toasts{position:fixed;bottom:22px;right:22px;z-index:1000;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:11px 16px;font-size:.8rem;color:var(--t1);box-shadow:0 8px 24px rgba(0,0,0,.45);animation:ti .22s ease;max-width:300px}
+.toast.ok{border-left:3px solid var(--grn)}
+.toast.err{border-left:3px solid var(--red)}
+@keyframes ti{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.empty{text-align:center;padding:40px 20px;color:var(--t3)}
+.empty .ei{font-size:28px;margin-bottom:10px;display:block}
+.stats-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:20px}
+.stat-card{background:var(--s1);border:1px solid var(--bd);border-radius:var(--rl);padding:18px 20px}
+.stat-card .sv{font-size:1.5rem;font-weight:600;font-family:'JetBrains Mono',monospace;letter-spacing:-.02em}
+.stat-card .sl{font-size:.72rem;color:var(--t3);margin-top:3px}
+.c-acc{color:var(--acc)}.c-grn{color:var(--grn)}.c-ora{color:var(--ora)}.c-pur{color:var(--pur)}
+.alert-ok{padding:10px 14px;border-radius:var(--r);font-size:.78rem;margin-bottom:14px;border:1px solid;background:rgba(45,212,160,.08);border-color:rgba(45,212,160,.25);color:var(--grn)}
+</style>
+</head>
+<body>
+
+<div class="loading" id="loading">
+  <div class="lbox">
+    <div class="spin"></div>
+    <strong id="ltitle">Processing…</strong>
+    <p id="lmsg">Please wait</p>
+  </div>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<div class="app">
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="icon">📊</div>
+    <h1>Excel Dashboard</h1>
+    <p>Auto-visualise any spreadsheet</p>
+  </div>
+
+  <div class="sb-sec">
+    <div class="sb-sec-title">Global controls</div>
+    <div class="fg">
+      <label>Show top N items</label>
+      <select id="g-top-n">
+        <option value="5">5</option>
+        <option value="10" selected>10</option>
+        <option value="15">15</option>
+        <option value="20">20</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Default aggregation</label>
+      <select id="g-agg">
+        <option value="SUM">SUM — add all values</option>
+        <option value="AVG">AVG — average</option>
+        <option value="COUNT">COUNT — count rows</option>
+        <option value="MAX">MAX — highest value</option>
+        <option value="MIN">MIN — lowest value</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="nav">
+    <div class="nav-lbl">Sections</div>
+    <button class="nt active" data-sec="sec-summary">
+      <span class="ico">📋</span> Overview <span class="bdg">§1</span>
+    </button>
+    <button class="nt" data-sec="sec-category">
+      <span class="ico">🏷️</span> Categories <span class="bdg">§2</span>
+    </button>
+    <button class="nt" data-sec="sec-numeric">
+      <span class="ico">📊</span> Numbers <span class="bdg">§3</span>
+    </button>
+    <button class="nt" data-sec="sec-correlation">
+      <span class="ico">🔗</span> Relationships <span class="bdg">§4</span>
+    </button>
+    <button class="nt" data-sec="sec-time">
+      <span class="ico">📅</span> Time Trends <span class="bdg">§5</span>
+    </button>
+    <button class="nt" data-sec="sec-graph">
+      <span class="ico">🕸️</span> Graph view <span class="bdg">§6</span>
+    </button>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <div>
+      <div class="tb-title" id="tb-title">Loading…</div>
+      <div class="tb-sub" id="tb-sub">Connecting to data source</div>
+    </div>
+    <div class="tb-sp"></div>
+    <div class="pill">Rows: <strong id="pill-rows">—</strong></div>
+    <div class="pill">Cols: <strong id="pill-cols">—</strong></div>
+  </div>
+
+  <div class="content">
+
+    <div id="init-screen" class="init-screen">
+      <span class="wico">⏳</span>
+      <h2>Loading dataset…</h2>
+      <p>The dashboard is reading your Excel file from the server.</p>
+      <div id="init-error" class="err" style="display:none"></div>
+    </div>
+
+    <!-- §1 OVERVIEW -->
+    <div id="sec-summary" class="sec">
+      <div class="sec-hdr">
+        <div><h2>Dataset Overview</h2><p>A quick look at what's in your file</p></div>
+        <span class="sec-bdg">§1</span>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="sv c-acc" id="st-rows">—</div><div class="sl">Total rows</div></div>
+        <div class="stat-card"><div class="sv c-grn" id="st-cols">—</div><div class="sl">Columns</div></div>
+        <div class="stat-card"><div class="sv c-ora" id="st-num">—</div><div class="sl">Numeric columns</div></div>
+        <div class="stat-card"><div class="sv c-pur" id="st-cat">—</div><div class="sl">Category columns</div></div>
+      </div>
+      <div class="g2">
+        <div class="card">
+          <div class="card-hdr"><div><div class="card-title">What types of data do you have?</div><div class="card-sub">Numbers, categories, dates, text</div></div></div>
+          <div class="cw" id="ch-types"></div>
+        </div>
+        <div class="card">
+          <div class="card-hdr"><div><div class="card-title">Missing data per column</div><div class="card-sub">Columns with missing values need attention</div></div></div>
+          <div class="cw" id="ch-nulls"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- §2 CATEGORIES -->
+    <div id="sec-category" class="sec">
+      <div class="sec-hdr">
+        <div><h2>Category Analysis</h2><p>Which groups are biggest, smallest, most valuable?</p></div>
+        <span class="sec-bdg">§2</span>
+      </div>
+      <div class="ctrls">
+        <div class="cg"><label>Category column</label><select id="c-cat"></select></div>
+        <div class="cg"><label>Numeric column</label><select id="c-num"></select></div>
+        <div class="cg"><label>Aggregation</label>
+          <select id="c-agg">
+            <option value="SUM">SUM</option>
+            <option value="AVG">AVG</option>
+            <option value="COUNT">COUNT</option>
+            <option value="MAX">MAX</option>
+            <option value="MIN">MIN</option>
+          </select>
+        </div>
+        <button class="btn-run" onclick="loadSection2()">↻ Apply</button>
+      </div>
+      <div class="g2">
+        <div class="card">
+          <div class="card-hdr"><div><div class="card-title">Count of records per category</div><div class="card-sub">Which category appears the most?</div></div></div>
+          <div class="cw" id="ch-cat-bar"></div>
+        </div>
+        <div class="card">
+          <div class="card-hdr"><div><div class="card-title">Share of each category</div><div class="card-sub">What % of total does each group take up?</div></div></div>
+          <div class="cw" id="ch-cat-pie"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div><div class="card-title">Total value by category (ranked)</div><div class="card-sub">Which category contributes most?</div></div></div>
+        <div class="cw" id="ch-cat-hbar"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div><div class="card-title">Top vs Bottom performers</div><div class="card-sub">Who are the best and worst?</div></div></div>
+        <div class="cw" id="ch-cat-grouped"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div><div class="card-title">Average value per category</div><div class="card-sub">Removes size bias — which group has the best average?</div></div></div>
+        <div class="cw" id="ch-cat-avg"></div>
+      </div>
+    </div>
+
+    <!-- §3 NUMBERS -->
+    <div id="sec-numeric" class="sec">
+      <div class="sec-hdr">
+        <div><h2>Number Analysis</h2><p>How your numeric data is spread</p></div>
+        <span class="sec-bdg">§3</span>
+      </div>
+      <div class="ctrls">
+        <div class="cg"><label>Numeric column</label><select id="d-num"></select></div>
+        <button class="btn-run" onclick="loadSection3()">↻ Apply</button>
+      </div>
+      <div class="g2">
+        <div class="card">
+          <div class="card-hdr"><div><div class="card-title">Distribution — how many fall in each range?</div><div class="card-sub">Tall bars = where most of your data lives</div></div></div>
+          <div class="cw" id="ch-hist"></div>
+        </div>
+        <div class="card">
+          <div class="card-hdr"><div><div class="card-title">Min, Max, Median & Outliers</div><div class="card-sub">Box = middle 50% · Line = median · Dots = unusual values</div></div></div>
+          <div class="cw" id="ch-box"></div>
+        </div>
+      </div>
+      <div class="exp" id="exp-outliers">
+        <div class="exp-hdr" onclick="toggleExp('exp-outliers')">
+          <span id="outlier-label">⚠ Outlier detection — click to expand</span>
+          <span class="exp-chev">▼</span>
+        </div>
+        <div class="exp-body"><div id="outlier-tbl" style="padding:14px"></div></div>
+      </div>
+    </div>
+
+    <!-- §4 RELATIONSHIPS -->
+    <div id="sec-correlation" class="sec">
+      <div class="sec-hdr">
+        <div><h2>Relationships</h2><p>Does one number go up when another goes up?</p></div>
+        <span class="sec-bdg">§4</span>
+      </div>
+      <div class="ctrls">
+        <div class="cg"><label>X axis (horizontal)</label><select id="r-x"></select></div>
+        <div class="cg"><label>Y axis (vertical)</label><select id="r-y"></select></div>
+        <div class="cg"><label>Color by category (optional)</label>
+          <select id="r-color"><option value="">— none —</option></select>
+        </div>
+        <div class="cg"><label>Bubble size (optional)</label>
+          <select id="r-size"><option value="">— none —</option></select>
+        </div>
+        <button class="btn-run" onclick="loadSection4()">↻ Apply</button>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div><div class="card-title">Scatter plot — does X predict Y?</div><div class="card-sub">Each dot = one row. The trend line shows the overall direction.</div></div></div>
+        <div class="insight">💡 Trend line going up-right = positively related. Down-right = opposite directions.</div>
+        <div class="cw tall" id="ch-scatter"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div><div class="card-title">Bubble chart — 3 variables at once</div><div class="card-sub">X · Y · bubble size each show a different number</div></div></div>
+        <div class="cw" id="ch-bubble"></div>
+      </div>
+    </div>
+
+    <!-- §5 TIME TRENDS -->
+    <div id="sec-time" class="sec">
+      <div class="sec-hdr">
+        <div><h2>Time Trends</h2><p>How is your data changing over time?</p></div>
+        <span class="sec-bdg">§5</span>
+      </div>
+      <div class="ctrls">
+        <div class="cg"><label>Date column</label><select id="t-date"></select></div>
+        <div class="cg"><label>Numeric column</label><select id="t-num"></select></div>
+        <div class="cg"><label>Aggregation</label>
+          <select id="t-agg">
+            <option value="SUM">SUM</option>
+            <option value="AVG">AVG</option>
+            <option value="COUNT">COUNT</option>
+          </select>
+        </div>
+        <div class="cg"><label>Group by</label>
+          <select id="t-period">
+            <option value="Day">Day</option>
+            <option value="Week">Week</option>
+            <option value="Month" selected>Month</option>
+            <option value="Quarter">Quarter</option>
+            <option value="Year">Year</option>
+          </select>
+        </div>
+        <button class="btn-run" onclick="loadSection5()">↻ Apply</button>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div><div class="card-title">Trend over time</div><div class="card-sub">Is the overall direction going up, down, or flat?</div></div></div>
+        <div class="insight">💡 The shaded area makes it easy to see growth or decline at a glance.</div>
+        <div class="cw tall" id="ch-line"></div>
+      </div>
+      <div class="g2">
+        <div class="card">
+          <div class="card-hdr"><div><div class="card-title">Month-over-month change</div><div class="card-sub">Green = grew vs last month · Red = declined</div></div></div>
+          <div class="cw" id="ch-mom"></div>
+        </div>
+        <div class="card">
+          <div class="card-hdr"><div><div class="card-title">Which day of the week is best?</div><div class="card-sub">Are certain days consistently higher?</div></div></div>
+          <div class="cw" id="ch-dow"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div><div class="card-title">Monthly seasonality</div><div class="card-sub">Which month is typically highest or lowest?</div></div></div>
+        <div class="cw" id="ch-season"></div>
+      </div>
+    </div>
+
+    <!-- §6 GRAPH VIEW -->
+    <div id="sec-graph" class="sec">
+      <div class="sec-hdr">
+        <div><h2>Graph View</h2><p>Relationships stored in Neo4j AuraDB</p></div>
+        <span class="sec-bdg">§6</span>
+      </div>
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-title" style="margin-bottom:10px">Source files loaded</div>
+        <div id="graph-files-list" style="font-size:.78rem;color:var(--t2)">Loading…</div>
+      </div>
+      <div class="ctrls">
+        <div class="cg"><label>Category column</label><select id="g-col"></select></div>
+        <div class="cg"><label>Category value</label><select id="g-val"></select></div>
+        <button class="btn-run" onclick="loadGraph()">Show graph</button>
+      </div>
+      <div class="card">
+        <div class="card-hdr">
+          <div>
+            <div class="card-title">Node-link graph</div>
+            <div class="card-sub">
+              🔵 Blue = category &nbsp;|&nbsp; 🟢 Green = data row &nbsp;|&nbsp; 🟣 Purple = source file
+            </div>
+          </div>
+        </div>
+        <div id="graph-container" style="height:500px;border-radius:8px;background:#12151c;"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<script>
+const API = '';
+let _grouped  = {numeric:[],category:[],date:[],id:[],text:[]};
+let _col_types = {};
+let _rows = 0;
+
+function loading(show, title='Processing…', msg='Please wait'){
+  document.getElementById('loading').classList.toggle('show', show);
+  if(show){
+    document.getElementById('ltitle').textContent = title;
+    document.getElementById('lmsg').textContent   = msg;
+  }
+}
+
+function toast(msg, type='ok'){
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  document.getElementById('toasts').appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+async function api(path, body=null){
+  const opts = body
+    ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}
+    : {method:'GET'};
+  const r = await fetch(API + path, opts);
+  return r.json();
+}
+
+function plotChart(divId, fig){
+  if(!fig || fig.error){
+    document.getElementById(divId).innerHTML =
+      `<div class="empty"><span class="ei">⚠</span><p>${fig?.error || 'No data available'}</p></div>`;
+    return;
+  }
+  const layout = Object.assign({
+    paper_bgcolor: 'transparent',
+    plot_bgcolor:  'transparent',
+    font: {family:"'Inter',sans-serif", size:11, color:'#8890a8'},
+    margin: {t:40, b:60, l:60, r:20},
+    xaxis: {gridcolor:'#2c3145', zerolinecolor:'#2c3145'},
+    yaxis: {gridcolor:'#2c3145', zerolinecolor:'#2c3145'},
+    legend: {bgcolor:'transparent'},
+    coloraxis: {colorbar:{tickfont:{color:'#8890a8'}}},
+  }, fig.layout || {});
+  Plotly.newPlot(divId, fig.data || [], layout, {displayModeBar:false, responsive:true});
+}
+
+function renderTable(divId, rows){
+  if(!rows || !rows.length){
+    document.getElementById(divId).innerHTML =
+      '<div class="empty"><span class="ei">✅</span><p>No outliers found</p></div>';
+    return;
+  }
+  const keys = Object.keys(rows[0]);
+  let h = `<table class="dtbl"><thead><tr>${keys.map(k=>`<th>${k}</th>`).join('')}</tr></thead><tbody>`;
+  rows.slice(0,100).forEach(r => {
+    h += `<tr>${keys.map(k=>`<td>${r[k] ?? ''}</td>`).join('')}</tr>`;
+  });
+  h += '</tbody></table>';
+  document.getElementById(divId).innerHTML = h;
+}
+
+function populateSelect(id, options, selected=''){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.innerHTML = options
+    .map(o => `<option value="${o}" ${o===selected ? 'selected' : ''}>${o}</option>`)
+    .join('');
+}
+
+function toggleExp(id){ document.getElementById(id).classList.toggle('open'); }
+
+function globalParams(){
+  return {
+    top_n: +document.getElementById('g-top-n').value,
+    agg:    document.getElementById('g-agg').value,
+  };
+}
+
+async function init(){
+  loading(true, 'Loading dataset…', 'Reading your Excel file');
+  try {
+    const data = await api('/ready');
+    if(!data.ready){
+      document.getElementById('init-error').textContent =
+        data.error || 'Could not load data. Check EXCEL_FILE_PATH in config.py.';
+      document.getElementById('init-error').style.display = 'block';
+      document.querySelector('.init-screen h2').textContent = 'Failed to load data';
+      document.querySelector('.init-screen p').textContent  =
+        'Set EXCEL_FILE_PATH in config.py to your Excel file and restart the server.';
+      loading(false);
+      return;
+    }
+    onDataLoaded(data);
+  } catch(e) {
+    document.getElementById('init-error').textContent = 'Server unreachable: ' + e.message;
+    document.getElementById('init-error').style.display = 'block';
+    loading(false);
+  }
+}
+
+function onDataLoaded(data){
+  _grouped   = data.grouped;
+  _col_types = data.col_types;
+  _rows      = data.rows;
+
+  document.getElementById('tb-title').textContent = 'Dashboard';
+  document.getElementById('tb-sub').textContent   =
+    `${data.rows.toLocaleString()} rows · ${data.columns.length} columns`;
+  document.getElementById('pill-rows').textContent = data.rows.toLocaleString();
+  document.getElementById('pill-cols').textContent = data.columns.length;
+
+  document.getElementById('st-rows').textContent = data.rows.toLocaleString();
+  document.getElementById('st-cols').textContent = data.columns.length;
+  document.getElementById('st-num').textContent  = _grouped.numeric.length;
+  document.getElementById('st-cat').textContent  = _grouped.category.length;
+
+  populateSelect('c-cat', _grouped.category);
+  populateSelect('c-num', _grouped.numeric);
+  populateSelect('d-num', _grouped.numeric);
+  populateSelect('r-x',   _grouped.numeric);
+  populateSelect('r-y',   _grouped.numeric,
+    _grouped.numeric[1] || _grouped.numeric[0] || '');
+
+  document.getElementById('r-color').innerHTML =
+    `<option value="">— none —</option>` +
+    _grouped.category.map(c => `<option value="${c}">${c}</option>`).join('');
+  document.getElementById('r-size').innerHTML  =
+    `<option value="">— none —</option>` +
+    _grouped.numeric.map(c => `<option value="${c}">${c}</option>`).join('');
+
+  populateSelect('t-date', _grouped.date);
+  populateSelect('t-num',  _grouped.numeric);
+
+  document.getElementById('init-screen').style.display = 'none';
+  showSection('sec-summary');
+  toast(`Loaded ${data.rows.toLocaleString()} rows ✓`, 'ok');
+  loading(false);
+  loadSection1();
+}
+
+document.querySelectorAll('.nt').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if(!_rows){ toast('Data not loaded yet', 'err'); return; }
+    document.querySelectorAll('.nt').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const sec = btn.dataset.sec;
+    showSection(sec);
+    if     (sec === 'sec-category')    loadSection2();
+    else if(sec === 'sec-numeric')     loadSection3();
+    else if(sec === 'sec-correlation') loadSection4();
+    else if(sec === 'sec-time')        loadSection5();
+    else if(sec === 'sec-graph' && _graphSummary.length === 0) initGraphSection();
+  });
+});
+
+function showSection(id){
+  document.querySelectorAll('.sec').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById(id);
+  if(el) el.classList.add('active');
+}
+
+async function loadSection1(){
+  loading(true, 'Loading overview…', '');
+  const [types, nulls] = await Promise.all([
+    api('/chart/summary_types', {}),
+    api('/chart/summary_nulls', {}),
+  ]);
+  plotChart('ch-types', types);
+  plotChart('ch-nulls', nulls);
+  loading(false);
+}
+
+async function loadSection2(){
+  loading(true, 'Loading category charts…', '');
+  const body = {
+    ...globalParams(),
+    agg:     document.getElementById('c-agg').value,
+    cat_col: document.getElementById('c-cat').value,
+    num_col: document.getElementById('c-num').value,
+  };
+  const [bar, pie, hbar, grouped, avg] = await Promise.all([
+    api('/chart/cat_bar',    body),
+    api('/chart/cat_pie',    body),
+    api('/chart/cat_hbar',   body),
+    api('/chart/cat_grouped',body),
+    api('/chart/cat_avg',    body),
+  ]);
+  plotChart('ch-cat-bar',     bar);
+  plotChart('ch-cat-pie',     pie);
+  plotChart('ch-cat-hbar',    hbar);
+  plotChart('ch-cat-grouped', grouped);
+  plotChart('ch-cat-avg',     avg);
+  loading(false);
+}
+
+async function loadSection3(){
+  loading(true, 'Loading number charts…', '');
+  const body = {
+    num_col: document.getElementById('d-num').value,
+  };
+  const [hist, box, out] = await Promise.all([
+    api('/chart/dist_hist',     body),
+    api('/chart/dist_box',      body),
+    api('/chart/dist_outliers', body),
+  ]);
+  plotChart('ch-hist', hist);
+  plotChart('ch-box',  box);
+  if(Array.isArray(out) && out.length){
+    renderTable('outlier-tbl', out);
+    document.getElementById('outlier-label').textContent =
+      `⚠ ${out.length} unusual values found — click to see them`;
+  } else {
+    document.getElementById('outlier-tbl').innerHTML =
+      '<div class="alert-ok">✓ No unusual outlier values detected in this column</div>';
+    document.getElementById('outlier-label').textContent =
+      '✓ No outliers detected — click to confirm';
+  }
+  loading(false);
+}
+
+async function loadSection4(){
+  loading(true, 'Loading relationship charts…', '');
+  const body = {
+    x_col:     document.getElementById('r-x').value,
+    y_col:     document.getElementById('r-y').value,
+    color_col: document.getElementById('r-color').value || null,
+    size_col:  document.getElementById('r-size').value  || null,
+  };
+  const [sc, bub] = await Promise.all([
+    api('/chart/corr_scatter', body),
+    api('/chart/corr_bubble',  body),
+  ]);
+  plotChart('ch-scatter', sc);
+  plotChart('ch-bubble',  bub);
+  loading(false);
+}
+
+async function loadSection5(){
+  loading(true, 'Loading time charts…', '');
+  const body = {
+    ...globalParams(),
+    date_col: document.getElementById('t-date').value,
+    num_col:  document.getElementById('t-num').value,
+    agg:      document.getElementById('t-agg').value,
+    period:   document.getElementById('t-period').value,
+  };
+  if(!body.date_col){
+    toast('No date column detected in this file', 'err');
+    loading(false);
+    return;
+  }
+  const [line, mom, dow, seas] = await Promise.all([
+    api('/chart/time_line',   body),
+    api('/chart/time_mom',    body),
+    api('/chart/time_dow',    body),
+    api('/chart/time_season', body),
+  ]);
+  plotChart('ch-line',   line);
+  plotChart('ch-mom',    mom);
+  plotChart('ch-dow',    dow);
+  plotChart('ch-season', seas);
+  loading(false);
+}
+
+function _syncGlobalsToSectionDropdowns(){
+  const agg  = document.getElementById('g-agg').value;
+  const cagg = document.getElementById('c-agg');
+  const tagg = document.getElementById('t-agg');
+  if(cagg) cagg.value = agg;
+  if(tagg){
+    const opts = [...tagg.options].map(o => o.value);
+    if(opts.includes(agg)) tagg.value = agg;
+  }
+}
+
+['g-top-n', 'g-agg'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    if(!_rows) return;
+    _syncGlobalsToSectionDropdowns();
+    const active = document.querySelector('.nt.active');
+    if(!active) return;
+    const sec = active.dataset.sec;
+    if     (sec === 'sec-summary')     loadSection1();
+    else if(sec === 'sec-category')    loadSection2();
+    else if(sec === 'sec-numeric')     loadSection3();
+    else if(sec === 'sec-correlation') loadSection4();
+    else if(sec === 'sec-time')        loadSection5();
+  });
+});
+
+// ── §6 Graph view ──────────────────────────────────────────────────────────
+let _graphSummary = [];
+let _graphNetwork = null;
+
+async function initGraphSection() {
+  try {
+    const [summary, files] = await Promise.all([
+      api('/graph/summary'),
+      api('/graph/files'),
+    ]);
+    _graphSummary = Array.isArray(summary) ? summary : [];
+
+    const fileEl = document.getElementById('graph-files-list');
+    if (Array.isArray(files) && files.length) {
+      fileEl.innerHTML = files.map(f =>
+        `<span style="display:inline-block;margin:3px 6px 3px 0;padding:3px 10px;
+          background:var(--s3);border:1px solid var(--bd);border-radius:99px">
+          ${f.file} <strong style="color:var(--grn)">${f.row_count.toLocaleString()}</strong>
+        </span>`
+      ).join('');
+    } else {
+      fileEl.textContent = 'No source file data in Neo4j yet.';
+    }
+
+    const colMap = {};
+    _graphSummary.forEach(d => {
+      if (!colMap[d.col]) colMap[d.col] = [];
+      colMap[d.col].push(d.value);
+    });
+
+    const colSel = document.getElementById('g-col');
+    colSel.innerHTML = Object.keys(colMap)
+      .map(c => `<option value="${c}">${c}</option>`).join('');
+
+    function updateVals() {
+      const col = colSel.value;
+      document.getElementById('g-val').innerHTML =
+        (colMap[col] || [])
+          .map(v => `<option value="${v}">${v}</option>`).join('');
+    }
+    colSel.addEventListener('change', updateVals);
+    updateVals();
+  } catch(e) {
+    toast('Graph init failed: ' + e.message, 'err');
+  }
+}
+
+async function loadGraph() {
+  const col = document.getElementById('g-col').value;
+  const val = document.getElementById('g-val').value;
+  if (!col || !val) return;
+
+  loading(true, 'Building graph…', '');
+  const data = await api('/graph/explore', { col_name: col, value: val, limit: 80 });
+  loading(false);
+
+  if (data.error) { toast(data.error, 'err'); return; }
+
+  const colorMap = {
+    Category:   '#5b7cff',
+    Row:        '#2dd4a0',
+    SourceFile: '#9d7dfa',
+  };
+
+  const visNodes = data.nodes.map(n => ({
+    id:    n.id,
+    label: n.label === 'Category'
+             ? `${n.props.col_name}\n${n.props.value}`
+           : n.label === 'SourceFile'
+             ? n.props.name
+           : `Row ${n.props._row_id}`,
+    color: { background: colorMap[n.label] || '#888', border: '#394060' },
+    font:  { color: '#eceef5', size: 11 },
+    shape: n.label === 'Category'   ? 'ellipse'
+         : n.label === 'SourceFile' ? 'diamond'
+         : 'dot',
+    size:  n.label === 'Category'   ? 24
+         : n.label === 'SourceFile' ? 20
+         : 10,
+    title: Object.entries(n.props)
+             .filter(([k]) => !k.startsWith('_'))
+             .map(([k, v]) => `${k}: ${v}`)
+             .join('\n'),
+  }));
+
+  const visEdges = data.edges.map((e, i) => ({
+    id:    i,
+    from:  e.from,
+    to:    e.to,
+    color: { color: '#394060', opacity: 0.7 },
+    width: 0.8,
+  }));
+
+  const container = document.getElementById('graph-container');
+  if (_graphNetwork) _graphNetwork.destroy();
+  _graphNetwork = new vis.Network(
+    container,
+    { nodes: new vis.DataSet(visNodes), edges: new vis.DataSet(visEdges) },
+    {
+      physics: {
+        stabilization: { iterations: 100 },
+        barnesHut: { gravitationalConstant: -3000 },
+      },
+      interaction: { tooltipDelay: 80, hover: true },
+    }
+  );
+  toast(`${data.nodes.length} nodes · ${data.edges.length} edges`, 'ok');
+}
+
+init();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/dist/vis-network.min.js"></script>
+</body>
+</html>
