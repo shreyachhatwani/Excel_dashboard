@@ -184,6 +184,7 @@
 #     app.run(debug=True, port=5000)
 
 # server.py
+# server.py
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 
@@ -223,11 +224,24 @@ def ready():
     ct   = _col_types()
     if conn is None or not ct:
         return jsonify({"ready": False, "error": "No data loaded yet"}), 503
+
     df = db.get_df()
+    if df is None:
+        return jsonify({"ready": False, "error": "No data loaded yet"}), 503
+
+    # Get REAL row count from PostgreSQL — not from the 5000-row sample
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM data")
+        total_rows = cur.fetchone()[0]
+        cur.close()
+    except Exception:
+        total_rows = len(df)
+
     return jsonify({
         "ready":     True,
-        "rows":      len(df) if df is not None else 0,
-        "columns":   list(df.columns) if df is not None else [],
+        "rows":      total_rows,        # real count from PostgreSQL
+        "columns":   list(df.columns),  # column names from sample
         "col_types": ct,
         "grouped":   _grouped(),
     })
@@ -257,7 +271,8 @@ def chart(section):
         if section == "summary_types":
             return jsonify(c.chart_column_types_pie(ct))
         if section == "summary_nulls":
-            return jsonify(c.chart_null_bar(q.q_column_summary(conn, ct).to_pandas()))
+            return jsonify(c.chart_null_bar(
+                q.q_column_summary(conn, ct).to_pandas()))
         if section == "summary_stats":
             df_s = q.q_numeric_stats(conn, grouped["numeric"])
             if df_s.is_empty():
@@ -265,27 +280,32 @@ def chart(section):
             return jsonify(df_s.fill_null("").to_dicts())
         if section == "cat_bar":
             return jsonify(c.chart_bar_counts(
-                q.q_category_counts(conn, cat_col, top_n).to_pandas(), cat_col, top_n))
+                q.q_category_counts(conn, cat_col, top_n).to_pandas(),
+                cat_col, top_n))
         if section == "cat_pie":
             return jsonify(c.chart_pie(
-                q.q_category_counts(conn, cat_col, top_n).to_pandas(), cat_col))
+                q.q_category_counts(conn, cat_col, top_n).to_pandas(),
+                cat_col))
         if section == "cat_hbar":
             if not num_col:
                 return jsonify({"error": "No numeric column"})
             return jsonify(c.chart_horizontal_bar(
-                q.q_category_aggregate(conn, cat_col, num_col, agg, top_n).to_pandas(),
+                q.q_category_aggregate(
+                    conn, cat_col, num_col, agg, top_n).to_pandas(),
                 cat_col, num_col, agg))
         if section == "cat_grouped":
             if not num_col:
                 return jsonify({"error": "No numeric column"})
             return jsonify(c.chart_grouped_bar(
-                q.q_category_aggregate(conn, cat_col, num_col, agg, top_n).to_pandas(),
+                q.q_category_aggregate(
+                    conn, cat_col, num_col, agg, top_n).to_pandas(),
                 cat_col, num_col))
         if section == "cat_avg":
             if not num_col or not cat_col:
                 return jsonify({"error": "Need category and numeric column"})
             return jsonify(c.chart_avg_by_category(
-                q.q_category_aggregate(conn, cat_col, num_col, "AVG", top_n).to_pandas(),
+                q.q_category_aggregate(
+                    conn, cat_col, num_col, "AVG", top_n).to_pandas(),
                 cat_col, num_col))
         if section == "dist_hist":
             return jsonify(c.chart_histogram(
@@ -294,20 +314,24 @@ def chart(section):
             return jsonify(c.chart_box_single(
                 q.q_histogram_data(conn, num_col).to_pandas(), num_col))
         if section == "dist_outliers":
-            return jsonify(q.q_outliers_iqr(conn, num_col).head(50).to_dicts())
+            return jsonify(
+                q.q_outliers_iqr(conn, num_col).head(50).to_dicts())
         if section == "corr_scatter":
             return jsonify(c.chart_scatter(
-                q.q_scatter_data(conn, x_col, y_col, color_col, None).to_pandas(),
+                q.q_scatter_data(
+                    conn, x_col, y_col, color_col, None).to_pandas(),
                 x_col, y_col, color_col))
         if section == "corr_bubble":
             return jsonify(c.chart_bubble(
-                q.q_scatter_data(conn, x_col, y_col, None, size_col).to_pandas(),
+                q.q_scatter_data(
+                    conn, x_col, y_col, None, size_col).to_pandas(),
                 x_col, y_col, size_col or ""))
         if section == "time_line":
             if not date_col or not num_col:
                 return jsonify({"error": "Need a date and numeric column"})
             return jsonify(c.chart_line(
-                q.q_time_series(conn, date_col, num_col, agg, period).to_pandas(),
+                q.q_time_series(
+                    conn, date_col, num_col, agg, period).to_pandas(),
                 date_col, num_col, period, agg))
         if section == "time_mom":
             if not date_col or not num_col:
@@ -363,4 +387,8 @@ def graph_explore():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(
+        debug=True,
+        port=5000,
+        use_reloader=False  # prevents mid-write restarts
+    )

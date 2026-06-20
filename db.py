@@ -119,6 +119,7 @@
 # _auto_load()
 # db.py
 import os
+import io
 import psycopg2
 import pandas as pd
 import polars as pl
@@ -136,7 +137,7 @@ from config import (
 
 _conn      = None
 _engine    = None
-_df_cache  = None
+_df_cache  = None   # small sample only — for column detection
 _col_types = None
 
 
@@ -164,11 +165,11 @@ def get_connection():
         _conn = None
 
     _conn = psycopg2.connect(
-        host     = POSTGRES_HOST,
-        port     = POSTGRES_PORT,
-        user     = POSTGRES_USER,
-        password = POSTGRES_PASSWORD,
-        dbname   = POSTGRES_DB,
+        host      = POSTGRES_HOST,
+        port      = POSTGRES_PORT,
+        user      = POSTGRES_USER,
+        password  = POSTGRES_PASSWORD,
+        dbname    = POSTGRES_DB,
     )
     _conn.autocommit = True
     return _conn
@@ -186,20 +187,20 @@ def _table_exists(engine) -> bool:
     try:
         with engine.connect() as c:
             result = c.execute(text(
-                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-                "WHERE table_name = 'data')"
+                "SELECT EXISTS ("
+                "  SELECT 1 FROM information_schema.tables "
+                "  WHERE table_schema = 'public' AND table_name = 'data'"
+                ")"
             ))
             return bool(result.scalar())
     except Exception:
         return False
 
 
-def _actual_row_count_for_file(engine, fname: str) -> int:
+def _rows_in_db_for_file(engine, fname: str) -> int:
     """
-    Counts rows ACTUALLY present in PostgreSQL for this file — the real
-    source of truth. This prevents duplicate stacking even if cache.json
-    is deleted, stale, or out of sync, because we never trust cache.json
-    alone anymore.
+    PostgreSQL is the ONLY source of truth.
+    Counts how many rows for this specific filename already exist in DB.
     """
     if not _table_exists(engine):
         return 0
@@ -214,8 +215,76 @@ def _actual_row_count_for_file(engine, fname: str) -> int:
         return 0
 
 
+def _total_rows_in_db(engine) -> int:
+    if not _table_exists(engine):
+        return 0
+    try:
+        with engine.connect() as c:
+            return int(c.execute(text("SELECT COUNT(*) FROM data")).scalar())
+    except Exception:
+        return 0
+
+
+def _fast_write(df: pd.DataFrame, engine):
+    """
+    Uses PostgreSQL COPY command — fastest possible bulk insert.
+    Creates table schema first if it doesn't exist.
+    """
+    # Create table structure if first time
+    if not _table_exists(engine):
+        df.head(0).to_sql(
+            "data", engine,
+            if_exists="append",
+            index=False
+        )
+        print("[db] ✓ Created table schema")
+
+    # Write data to in-memory CSV buffer
+    buffer = io.StringIO()
+    df.to_csv(buffer, index=False, header=False)
+    buffer.seek(0)
+
+    # Bulk copy via PostgreSQL COPY
+    raw_conn = psycopg2.connect(
+        host     = POSTGRES_HOST,
+        port     = POSTGRES_PORT,
+        user     = POSTGRES_USER,
+        password = POSTGRES_PASSWORD,
+        dbname   = POSTGRES_DB,
+    )
+    try:
+        with raw_conn.cursor() as cur:
+            cols = ', '.join([f'"{c}"' for c in df.columns])
+            cur.copy_expert(
+                f'COPY data ({cols}) FROM STDIN WITH CSV',
+                buffer
+            )
+        raw_conn.commit()
+        print(f"[db] ✓ Wrote {len(df)} rows via COPY")
+    finally:
+        raw_conn.close()
+
+
+def _load_sample_for_types(engine):
+    """
+    Loads 5000 rows just to detect column types.
+    Charts run against full PostgreSQL data directly — not this sample.
+    This is purely for column type detection and dashboard column list.
+    """
+    global _df_cache, _col_types
+    try:
+        sample     = pl.from_pandas(
+            pd.read_sql("SELECT * FROM data LIMIT 5000", engine)
+        )
+        _df_cache  = sample
+        _col_types = detect_column_types(sample.to_pandas())
+        print(f"[db] ✓ Column types detected from sample")
+    except Exception as e:
+        print(f"[db] ✗ Sample load failed: {e}")
+
+
 def load_excel_to_postgres(filepath: str = None, folder_path: str = None):
-    global _conn, _engine, _df_cache, _col_types
+    global _df_cache, _col_types
 
     fp     = filepath    or EXCEL_FILE_PATH    or None
     folder = folder_path or EXCEL_FOLDER_PATH  or None
@@ -226,56 +295,47 @@ def load_excel_to_postgres(filepath: str = None, folder_path: str = None):
             "Set EXCEL_FILE_PATH or EXCEL_FOLDER_PATH in config.py"
         )
 
+    # ── Load Excel file(s) ────────────────────────────────────────────────
     if folder:
         full_df, file_list = _loader.load_folder(folder)
     else:
         full_df, file_list = _loader.load_file(fp)
 
-    engine = _get_engine()
-
+    engine     = _get_engine()
     new_frames = []
+
     for fpath in file_list:
-        fname   = os.path.basename(fpath)
-        file_df = full_df.filter(pl.col("_source_file") == fname)
-        total   = len(file_df)
+        fname         = os.path.basename(fpath)
+        file_df       = full_df.filter(pl.col("_source_file") == fname)
+        total         = len(file_df)
 
-        # Real check against PostgreSQL — the true source of truth.
-        actual_in_db = _actual_row_count_for_file(engine, fname)
-        cached       = _cache.get_cached_row_count(fpath)
-        already_loaded = max(actual_in_db, cached)
+        # Ask PostgreSQL directly — only source of truth
+        already_in_db = _rows_in_db_for_file(engine, fname)
 
-        if total <= already_loaded:
-            print(f"[db] ↷  {fname}: {total} rows — unchanged, skipping "
-                  f"(db has {actual_in_db}, cache had {cached})")
-            try:
-                existing = pl.from_pandas(
-                    pd.read_sql(
-                        'SELECT * FROM data WHERE "_source_file" = %(fname)s',
-                        engine,
-                        params={"fname": fname}
-                    )
-                )
-                new_frames.append(existing)
-            except Exception:
-                new_frames.append(file_df)
-            _cache.update_cache(fpath, total)
+        if already_in_db >= total:
+            print(f"[db] ↷  {fname}: {total} rows — already in PostgreSQL, skipping")
             continue
 
-        new_rows = file_df.slice(already_loaded, total - already_loaded)
-        print(f"[db] ✚  {fname}: {total - already_loaded} new rows "
-              f"(db had {actual_in_db}, now {total})")
-        new_frames.append(new_rows)
-        _cache.update_cache(fpath, total)
+        if already_in_db == 0:
+            print(f"[db] ✚  {fname}: loading all {total} rows")
+            new_frames.append(file_df)
+        else:
+            missing = total - already_in_db
+            print(f"[db] ✚  {fname}: loading {missing} missing rows "
+                  f"(had {already_in_db}, now {total})")
+            new_frames.append(file_df.slice(already_in_db, missing))
 
     if not new_frames:
-        print("[db] ✓ Nothing new — all files unchanged.")
-        return _df_cache.to_pandas() if _df_cache is not None else None, _col_types
+        print("[db] ✓ All data already in PostgreSQL")
+        _load_sample_for_types(engine)
+        return None, _col_types
 
-    incremental_df = pl.concat(new_frames, how="diagonal")
-
+    # ── Prepare data ──────────────────────────────────────────────────────
+    incremental_df     = pl.concat(new_frames, how="diagonal")
     pandas_incremental = incremental_df.to_pandas()
     col_types          = detect_column_types(pandas_incremental)
 
+    # Coerce date columns
     for col, t in col_types.items():
         if t == "date" and col in incremental_df.columns:
             try:
@@ -287,29 +347,26 @@ def load_excel_to_postgres(filepath: str = None, folder_path: str = None):
 
     pandas_incremental = incremental_df.to_pandas()
 
-    if len(pandas_incremental) > 0:
-        pandas_incremental.to_sql(
-            "data", engine,
-            if_exists="append",
-            index=False,
-            chunksize=500,
-            method="multi",
-        )
-        print(f"[db] ✓ Wrote {len(pandas_incremental)} new rows to PostgreSQL")
-    else:
-        print("[db] ✓ No new rows to write to PostgreSQL.")
+    # ── Write to PostgreSQL via COPY (fast) ───────────────────────────────
+    _fast_write(pandas_incremental, engine)
 
-    full_loaded = pl.from_pandas(pd.read_sql("SELECT * FROM data", engine))
-    _df_cache   = full_loaded
-    _col_types  = detect_column_types(full_loaded.to_pandas())
+    # Update cache as a record (never used for load decisions)
+    for fpath in file_list:
+        fname   = os.path.basename(fpath)
+        file_df = full_df.filter(pl.col("_source_file") == fname)
+        _cache.update_cache(fpath, len(file_df))
 
+    # ── Load sample for column type detection ─────────────────────────────
+    _load_sample_for_types(engine)
+
+    # ── Write to Neo4j ────────────────────────────────────────────────────
     try:
         _nw.write_incremental(pandas_incremental, col_types)
     except Exception as e:
-        print(f"[neo4j] ✗ {e} — dashboard still works via PostgreSQL.")
+        print(f"[neo4j] ✗ {e} — dashboard works via PostgreSQL.")
 
-    print(f"[db] ✓ PostgreSQL total: {len(full_loaded)} rows, "
-          f"{len(full_loaded.columns)} columns")
+    total_in_db = _total_rows_in_db(engine)
+    print(f"[db] ✓ PostgreSQL total: {total_in_db} rows")
     return pandas_incremental, col_types
 
 
@@ -317,7 +374,7 @@ def _auto_load():
     fp     = EXCEL_FILE_PATH   or None
     folder = EXCEL_FOLDER_PATH or None
     if not fp and not folder:
-        print("[db] ℹ No default path configured in config.py")
+        print("[db] ℹ No path configured in config.py")
         return
     try:
         load_excel_to_postgres(filepath=fp, folder_path=folder)

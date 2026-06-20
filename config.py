@@ -14,7 +14,7 @@ POSTGRES_PASSWORD = "87654321@"   # what you set during install
 POSTGRES_DB       = "dashboard_db"             # the DB you created in pgAdmin
 
 # ── Input source — set ONE
-EXCEL_FILE_PATH   = r"C:\Users\Shreya\Downloads\PUR_DATA (1).xls"
+EXCEL_FILE_PATH   = r"C:\Users\Shreya\Downloads\Monthly Item Wise Sales report\Monthly Item Wise Sales report\POS_2.O_Item_Wise_Sa_May 2025.xlsx"
 EXCEL_FOLDER_PATH = ""
 
 # ── Cache file
