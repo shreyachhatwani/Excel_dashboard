@@ -1,4 +1,4 @@
-# loader.py  — reads a single file OR every Excel file in a folder
+# loader.py
 import os
 import polars as pl
 import pandas as pd
@@ -7,7 +7,6 @@ SUPPORTED = (".xlsx", ".xls")
 
 
 def _clean_cols(df: pl.DataFrame) -> pl.DataFrame:
-    """Standardise column names."""
     cleaned = [
         c.strip()
          .replace(" ", "_").replace("(", "").replace(")", "")
@@ -17,21 +16,32 @@ def _clean_cols(df: pl.DataFrame) -> pl.DataFrame:
     return df.rename({old: new for old, new in zip(df.columns, cleaned)})
 
 
+def _coerce_types(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Cast all integer columns to Float64 so files with the same column
+    but different numeric types don't crash when stacking.
+    """
+    for col in df.columns:
+        if df[col].dtype in (
+            pl.Int8, pl.Int16, pl.Int32, pl.Int64,
+            pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64
+        ):
+            df = df.with_columns(pl.col(col).cast(pl.Float64))
+    return df
+
+
 def _read_one(filepath: str) -> pl.DataFrame:
-    """Read a single .xls or .xlsx into a Polars DataFrame."""
     if filepath.lower().endswith(".xls"):
         df = pl.from_pandas(pd.read_excel(filepath, engine="xlrd"))
     else:
         df = pl.read_excel(filepath)
-    return _clean_cols(df)
+    df = _clean_cols(df)
+    df = _coerce_types(df)
+    return df
 
 
 def load_file(filepath: str):
-    """
-    Load a single Excel file.
-    Returns (polars_df, [filepath])
-    Adds _source_file column.
-    """
+    """Load a single Excel file. Returns (polars_df, [filepath])."""
     df = _read_one(filepath)
     df = df.with_columns(
         pl.lit(os.path.basename(filepath)).alias("_source_file")
@@ -41,39 +51,16 @@ def load_file(filepath: str):
 
 def load_folder(folder_path: str):
     """
-    Load every Excel file inside a folder.
-    Stacks them all into one DataFrame.
-    Adds _source_file column so every row knows which file it came from.
-    Returns (combined_polars_df, [list_of_full_filepaths])
+    Returns list of file paths only — does NOT load into memory.
+    db.py loads each file one at a time to avoid RAM issues.
     """
     files = sorted([
         os.path.join(folder_path, f)
         for f in os.listdir(folder_path)
         if f.lower().endswith(SUPPORTED) and not f.startswith("~")
     ])
-
     if not files:
         raise FileNotFoundError(
             f"No Excel files found in folder: {folder_path}"
         )
-
-    frames = []
-    loaded = []
-    for fp in files:
-        try:
-            df = _read_one(fp)
-            df = df.with_columns(
-                pl.lit(os.path.basename(fp)).alias("_source_file")
-            )
-            frames.append(df)
-            loaded.append(fp)
-            print(f"[loader] ✓ {os.path.basename(fp)} — {len(df)} rows")
-        except Exception as e:
-            print(f"[loader] ✗ Skipped {os.path.basename(fp)}: {e}")
-
-    if not frames:
-        raise ValueError("All files in folder failed to load.")
-
-    # diagonal fill fills missing columns with null so mismatched schemas stack cleanly
-    combined = pl.concat(frames, how="diagonal")
-    return combined, loaded
+    return files

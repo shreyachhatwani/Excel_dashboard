@@ -217,7 +217,6 @@ def _first(lst):
 def index():
     return render_template("index.html")
 
-
 @app.route("/ready")
 def ready():
     conn = db.get_connection()
@@ -229,19 +228,20 @@ def ready():
     if df is None:
         return jsonify({"ready": False, "error": "No data loaded yet"}), 503
 
-    # Get REAL row count from PostgreSQL — not from the 5000-row sample
+    # Read cached row count — instant, no table scan
     try:
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM data")
-        total_rows = cur.fetchone()[0]
+        cur.execute("SELECT value FROM data_meta WHERE key = 'row_count'")
+        row = cur.fetchone()
+        total_rows = int(row[0]) if row else len(df)
         cur.close()
     except Exception:
         total_rows = len(df)
 
     return jsonify({
         "ready":     True,
-        "rows":      total_rows,        # real count from PostgreSQL
-        "columns":   list(df.columns),  # column names from sample
+        "rows":      total_rows,
+        "columns":   list(df.columns),
         "col_types": ct,
         "grouped":   _grouped(),
     })
@@ -390,5 +390,5 @@ if __name__ == "__main__":
     app.run(
         debug=True,
         port=5000,
-        use_reloader=False  # prevents mid-write restarts
+        use_reloader=False
     )

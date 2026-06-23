@@ -325,19 +325,43 @@ def q_row_count(conn) -> pl.DataFrame:
 
 
 def q_column_summary(conn, col_types: dict) -> pl.DataFrame:
-    dfs = []
-    for col, ctype in col_types.items():
-        sql = f"""
-            SELECT
-                %s                                                  AS column_name,
-                COUNT("{col}")                                      AS count,
-                SUM(CASE WHEN "{col}" IS NULL THEN 1 ELSE 0 END)   AS nulls,
-                COUNT(DISTINCT "{col}")                             AS distinct_values,
-                %s                                                  AS col_type
-            FROM data
-        """
-        dfs.append(_query(conn, sql, (col, ctype)))
-    return pl.concat(dfs) if dfs else pl.DataFrame()
+    """
+    Single query for null counts across all columns.
+    No COUNT(DISTINCT) — that was extremely slow on large datasets.
+    Null chart only needs null counts, not distinct counts.
+    """
+    if not col_types:
+        return pl.DataFrame()
+
+    cols  = list(col_types.keys())
+    parts = []
+    for col in cols:
+        parts.append(
+            f'SUM(CASE WHEN "{col}" IS NULL THEN 1 ELSE 0 END) AS "null__{col}"'
+        )
+
+    sql = f"SELECT COUNT(*) AS __total__, {', '.join(parts)} FROM data"
+
+    with conn.cursor() as cur:
+        cur.execute(sql)
+        row  = cur.fetchone()
+        desc = [d[0] for d in cur.description]
+
+    result = dict(zip(desc, row))
+    total  = result["__total__"]
+
+    rows = []
+    for col in cols:
+        null_count = result.get(f"null__{col}", 0) or 0
+        rows.append({
+            "column_name":     col,
+            "count":           total - null_count,
+            "nulls":           null_count,
+            "distinct_values": 0,
+            "col_type":        col_types[col],
+        })
+
+    return pl.DataFrame(rows)
 
 
 def q_numeric_stats(conn, numeric_cols: list) -> pl.DataFrame:
@@ -345,11 +369,11 @@ def q_numeric_stats(conn, numeric_cols: list) -> pl.DataFrame:
         return pl.DataFrame()
     parts = [
         f"""
-        SELECT %s                       AS column_name,
-               MIN("{col}")            AS min_val,
-               MAX("{col}")            AS max_val,
+        SELECT %s                             AS column_name,
+               MIN("{col}")                   AS min_val,
+               MAX("{col}")                   AS max_val,
                ROUND(AVG("{col}")::numeric, 2) AS avg_val,
-               COUNT("{col}")          AS count
+               COUNT("{col}")                 AS count
         FROM data
         """
         for col in numeric_cols
@@ -404,8 +428,8 @@ def q_pareto(conn, cat_col: str, num_col: str, top_n: int = 20) -> pl.DataFrame:
         totals AS (SELECT *, SUM(total) OVER () AS grand_total FROM base)
         SELECT category,
                total,
-               ROUND((100.0 * SUM(total) OVER (ORDER BY total DESC) / grand_total)::numeric, 1)
-                   AS cum_pct
+               ROUND((100.0 * SUM(total) OVER (ORDER BY total DESC)
+                      / grand_total)::numeric, 1) AS cum_pct
         FROM totals
     """
     return _query(conn, sql, (top_n,))
@@ -475,7 +499,8 @@ def q_scatter_data(conn, x_col: str, y_col: str,
         cols.append(f'"{color_col}" AS color')
     if size_col:
         cols.append(f'"{size_col}" AS size')
-    return _query(conn, f"SELECT {', '.join(cols)} FROM data WHERE {where} LIMIT 2000")
+    return _query(conn,
+        f"SELECT {', '.join(cols)} FROM data WHERE {where} LIMIT 2000")
 
 
 def q_scatter_matrix(conn, numeric_cols: list) -> pl.DataFrame:
@@ -493,12 +518,12 @@ def q_time_series(conn, date_col: str, num_col: str,
     if safe_agg not in ("SUM", "AVG", "MIN", "MAX", "COUNT"):
         safe_agg = "SUM"
 
-    # PostgreSQL date expressions — replaces SQLite strftime / MySQL DATE_FORMAT
     period_expr = {
         "Day":     f'TO_CHAR("{date_col}"::date, \'YYYY-MM-DD\')',
         "Week":    f'TO_CHAR("{date_col}"::date, \'IYYY-IW\')',
         "Month":   f'TO_CHAR("{date_col}"::date, \'YYYY-MM\')',
-        "Quarter": f'CONCAT(EXTRACT(YEAR FROM "{date_col}"::date), \'-Q\', EXTRACT(QUARTER FROM "{date_col}"::date))',
+        "Quarter": f'CONCAT(EXTRACT(YEAR FROM "{date_col}"::date), \'-Q\','
+                   f' EXTRACT(QUARTER FROM "{date_col}"::date))',
         "Year":    f'EXTRACT(YEAR FROM "{date_col}"::date)::text',
     }.get(period, f'TO_CHAR("{date_col}"::date, \'YYYY-MM\')')
 

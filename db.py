@@ -118,6 +118,7 @@
 
 # _auto_load()
 # db.py
+# db.py
 import os
 import io
 import psycopg2
@@ -129,7 +130,6 @@ from urllib.parse import quote_plus
 from detector import detect_column_types
 import loader as _loader
 import cache  as _cache
-import neo4j_writer as _nw
 from config import (
     EXCEL_FILE_PATH, EXCEL_FOLDER_PATH,
     POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
@@ -137,7 +137,7 @@ from config import (
 
 _conn      = None
 _engine    = None
-_df_cache  = None   # small sample only — for column detection
+_df_cache  = None
 _col_types = None
 
 
@@ -163,7 +163,6 @@ def get_connection():
             return _conn
     except Exception:
         _conn = None
-
     _conn = psycopg2.connect(
         host      = POSTGRES_HOST,
         port      = POSTGRES_PORT,
@@ -198,10 +197,7 @@ def _table_exists(engine) -> bool:
 
 
 def _rows_in_db_for_file(engine, fname: str) -> int:
-    """
-    PostgreSQL is the ONLY source of truth.
-    Counts how many rows for this specific filename already exist in DB.
-    """
+    """PostgreSQL is the only source of truth."""
     if not _table_exists(engine):
         return 0
     try:
@@ -215,6 +211,24 @@ def _rows_in_db_for_file(engine, fname: str) -> int:
         return 0
 
 
+def _get_all_loaded_files(engine) -> dict:
+    """
+    Returns {filename: row_count} for every file in PostgreSQL.
+    One query instead of one per file — much faster for large folders.
+    """
+    if not _table_exists(engine):
+        return {}
+    try:
+        with engine.connect() as c:
+            result = c.execute(text(
+                'SELECT "_source_file", COUNT(*) as cnt '
+                'FROM data GROUP BY "_source_file"'
+            ))
+            return {row[0]: row[1] for row in result}
+    except Exception:
+        return {}
+
+
 def _total_rows_in_db(engine) -> int:
     if not _table_exists(engine):
         return 0
@@ -225,26 +239,26 @@ def _total_rows_in_db(engine) -> int:
         return 0
 
 
-def _fast_write(df: pd.DataFrame, engine):
-    """
-    Uses PostgreSQL COPY command — fastest possible bulk insert.
-    Creates table schema first if it doesn't exist.
-    """
-    # Create table structure if first time
+def _get_db_columns(engine) -> set:
     if not _table_exists(engine):
-        df.head(0).to_sql(
-            "data", engine,
-            if_exists="append",
-            index=False
-        )
-        print("[db] ✓ Created table schema")
+        return set()
+    try:
+        with engine.connect() as c:
+            result = c.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'data'"
+            ))
+            return {row[0] for row in result}
+    except Exception:
+        return set()
 
-    # Write data to in-memory CSV buffer
-    buffer = io.StringIO()
-    df.to_csv(buffer, index=False, header=False)
-    buffer.seek(0)
 
-    # Bulk copy via PostgreSQL COPY
+def _add_missing_columns(engine, df_cols: list):
+    """Add any columns this file has that the table doesn't yet."""
+    existing = _get_db_columns(engine)
+    missing  = [c for c in df_cols if c not in existing]
+    if not missing:
+        return
     raw_conn = psycopg2.connect(
         host     = POSTGRES_HOST,
         port     = POSTGRES_PORT,
@@ -254,22 +268,82 @@ def _fast_write(df: pd.DataFrame, engine):
     )
     try:
         with raw_conn.cursor() as cur:
-            cols = ', '.join([f'"{c}"' for c in df.columns])
+            for col in missing:
+                cur.execute(f'ALTER TABLE data ADD COLUMN "{col}" TEXT')
+                print(f"[db] + Added missing column: {col}")
+        raw_conn.commit()
+    finally:
+        raw_conn.close()
+
+
+def _fast_write(df: pd.DataFrame, engine):
+    """Bulk write via PostgreSQL COPY — fastest possible method."""
+    if not _table_exists(engine):
+        df.head(0).to_sql(
+            "data", engine,
+            if_exists="append",
+            index=False
+        )
+        print("[db] ✓ Created table schema")
+
+    _add_missing_columns(engine, list(df.columns))
+
+    db_cols     = _get_db_columns(engine)
+    write_cols  = [c for c in df.columns if c in db_cols]
+    df_to_write = df[write_cols]
+
+    buffer = io.StringIO()
+    df_to_write.to_csv(buffer, index=False, header=False)
+    buffer.seek(0)
+
+    raw_conn = psycopg2.connect(
+        host     = POSTGRES_HOST,
+        port     = POSTGRES_PORT,
+        user     = POSTGRES_USER,
+        password = POSTGRES_PASSWORD,
+        dbname   = POSTGRES_DB,
+    )
+    try:
+        with raw_conn.cursor() as cur:
+            cols = ', '.join([f'"{c}"' for c in write_cols])
             cur.copy_expert(
                 f'COPY data ({cols}) FROM STDIN WITH CSV',
                 buffer
             )
         raw_conn.commit()
-        print(f"[db] ✓ Wrote {len(df)} rows via COPY")
+        print(f"[db] ✓ Wrote {len(df_to_write)} rows via COPY")
     finally:
         raw_conn.close()
 
 
+def _update_row_count_cache(engine):
+    """
+    Store total row count in data_meta table.
+    /ready reads this instead of doing COUNT(*) on 7M rows — instant.
+    """
+    try:
+        with engine.connect() as c:
+            c.execute(text("""
+                CREATE TABLE IF NOT EXISTS data_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """))
+            c.execute(text("""
+                INSERT INTO data_meta (key, value)
+                VALUES ('row_count', (SELECT COUNT(*) FROM data)::TEXT)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            """))
+            c.commit()
+        print("[db] ✓ Row count cache updated")
+    except Exception as e:
+        print(f"[db] ✗ Could not update row count cache: {e}")
+
+
 def _load_sample_for_types(engine):
     """
-    Loads 5000 rows just to detect column types.
-    Charts run against full PostgreSQL data directly — not this sample.
-    This is purely for column type detection and dashboard column list.
+    5000-row sample for column type detection only.
+    All charts query PostgreSQL directly — not this sample.
     """
     global _df_cache, _col_types
     try:
@@ -278,7 +352,9 @@ def _load_sample_for_types(engine):
         )
         _df_cache  = sample
         _col_types = detect_column_types(sample.to_pandas())
-        print(f"[db] ✓ Column types detected from sample")
+        print("[db] ✓ Column types detected")
+        # Update cached row count so /ready is instant
+        _update_row_count_cache(engine)
     except Exception as e:
         print(f"[db] ✗ Sample load failed: {e}")
 
@@ -290,84 +366,72 @@ def load_excel_to_postgres(filepath: str = None, folder_path: str = None):
     folder = folder_path or EXCEL_FOLDER_PATH  or None
 
     if not fp and not folder:
-        raise ValueError(
-            "No input provided. "
-            "Set EXCEL_FILE_PATH or EXCEL_FOLDER_PATH in config.py"
-        )
+        raise ValueError("No input provided in config.py")
 
-    # ── Load Excel file(s) ────────────────────────────────────────────────
+    engine = _get_engine()
+
+    # Get file list
     if folder:
-        full_df, file_list = _loader.load_folder(folder)
+        file_list = _loader.load_folder(folder)
     else:
-        full_df, file_list = _loader.load_file(fp)
+        file_list = [fp]
 
-    engine     = _get_engine()
-    new_frames = []
+    # One query to get all already-loaded files from PostgreSQL
+    already_loaded = _get_all_loaded_files(engine)
+    print(f"[db] PostgreSQL already has {len(already_loaded)} file(s) loaded")
 
     for fpath in file_list:
-        fname         = os.path.basename(fpath)
-        file_df       = full_df.filter(pl.col("_source_file") == fname)
-        total         = len(file_df)
+        fname = os.path.basename(fpath)
 
-        # Ask PostgreSQL directly — only source of truth
-        already_in_db = _rows_in_db_for_file(engine, fname)
+        # If PostgreSQL has any rows for this file — skip entirely
+        # Don't even open the file from disk
+        already_in_db = already_loaded.get(fname, 0)
 
-        if already_in_db >= total:
-            print(f"[db] ↷  {fname}: {total} rows — already in PostgreSQL, skipping")
+        if already_in_db > 0:
+            print(f"[db] ↷  {fname}: {already_in_db:,} rows — "
+                  f"already in PostgreSQL, skipping")
             continue
 
-        if already_in_db == 0:
-            print(f"[db] ✚  {fname}: loading all {total} rows")
-            new_frames.append(file_df)
-        else:
-            missing = total - already_in_db
-            print(f"[db] ✚  {fname}: loading {missing} missing rows "
-                  f"(had {already_in_db}, now {total})")
-            new_frames.append(file_df.slice(already_in_db, missing))
+        # Only reach here if file is genuinely new
+        print(f"[db] 📖 Reading {fname} from disk...")
+        try:
+            single_df, _ = _loader.load_file(fpath)
+        except Exception as e:
+            print(f"[loader] ✗ Skipped {fname}: {e}")
+            continue
 
-    if not new_frames:
-        print("[db] ✓ All data already in PostgreSQL")
-        _load_sample_for_types(engine)
-        return None, _col_types
+        total = len(single_df)
+        print(f"[db] ✚  {fname}: loading all {total:,} rows")
 
-    # ── Prepare data ──────────────────────────────────────────────────────
-    incremental_df     = pl.concat(new_frames, how="diagonal")
-    pandas_incremental = incremental_df.to_pandas()
-    col_types          = detect_column_types(pandas_incremental)
+        # Coerce date columns
+        pandas_df = single_df.to_pandas()
+        col_types = detect_column_types(pandas_df)
+        for col, t in col_types.items():
+            if t == "date" and col in single_df.columns:
+                try:
+                    single_df = single_df.with_columns(
+                        pl.col(col).cast(pl.String, strict=False).str.slice(0, 10)
+                    )
+                except Exception:
+                    pass
+        pandas_df = single_df.to_pandas()
 
-    # Coerce date columns
-    for col, t in col_types.items():
-        if t == "date" and col in incremental_df.columns:
-            try:
-                incremental_df = incremental_df.with_columns(
-                    pl.col(col).cast(pl.String, strict=False).str.slice(0, 10)
-                )
-            except Exception:
-                pass
+        # Write to PostgreSQL via COPY
+        _fast_write(pandas_df, engine)
 
-    pandas_incremental = incremental_df.to_pandas()
+        # Update cache as record
+        _cache.update_cache(fpath, total)
 
-    # ── Write to PostgreSQL via COPY (fast) ───────────────────────────────
-    _fast_write(pandas_incremental, engine)
+        # Free memory before next file
+        del single_df, pandas_df
 
-    # Update cache as a record (never used for load decisions)
-    for fpath in file_list:
-        fname   = os.path.basename(fpath)
-        file_df = full_df.filter(pl.col("_source_file") == fname)
-        _cache.update_cache(fpath, len(file_df))
-
-    # ── Load sample for column type detection ─────────────────────────────
+    # Load 5000-row sample for type detection
+    # Also updates the row count cache so /ready is instant
     _load_sample_for_types(engine)
 
-    # ── Write to Neo4j ────────────────────────────────────────────────────
-    try:
-        _nw.write_incremental(pandas_incremental, col_types)
-    except Exception as e:
-        print(f"[neo4j] ✗ {e} — dashboard works via PostgreSQL.")
-
     total_in_db = _total_rows_in_db(engine)
-    print(f"[db] ✓ PostgreSQL total: {total_in_db} rows")
-    return pandas_incremental, col_types
+    print(f"[db] ✓ Done — PostgreSQL total: {total_in_db:,} rows")
+    return None, _col_types
 
 
 def _auto_load():
