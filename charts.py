@@ -1,15 +1,4 @@
 
-
-# """
-# charts.py  —  All Plotly chart builders.
-
-# Fixes in this version:
-#   - legend bgcolor uses rgba(0,0,0,0) NOT 'transparent' (Plotly rejects the string)
-#   - chart_avg_by_category: query returns 'value' col, chart uses y='value' (not 'avg_val')
-#   - chart_pie: no label+percent on slices; names in legend only → no overlap
-#   - chart_bar_counts / chart_horizontal_bar: use correct fixed col names
-#   - Smart tick limiting for big datasets
-# """
 # import json
 # import math
 
@@ -19,8 +8,8 @@
 
 # TEMPLATE  = "plotly_dark"
 # COLORS    = px.colors.qualitative.Vivid
-# _TRANSP   = "rgba(0,0,0,0)"   # Plotly rejects the CSS word 'transparent'
-# _MAX_CHARS = 18                # label truncation threshold
+# _TRANSP   = "rgba(0,0,0,0)"
+# _MAX_CHARS = 18
 
 
 # def _fig_to_json(fig):
@@ -102,7 +91,7 @@
 
 
 # def chart_pie(df: pd.DataFrame, cat_col: str):
-#     """df cols: 'category', 'count' — legend-only labels, no on-slice text overlap"""
+#     """df cols: 'category', 'count'"""
 #     df   = df.copy()
 #     n    = len(df)
 #     df['label'] = _trim(df['category'], 22)
@@ -178,7 +167,7 @@
 
 
 # def chart_avg_by_category(df: pd.DataFrame, cat_col: str, num_col: str):
-#     """df cols: 'category', 'value'  (AVG query returns 'value' not 'avg_val')"""
+#     """df cols: 'category', 'value'"""
 #     df = df.copy()
 #     df['category'] = _trim(df['category'])
 #     fig = px.bar(
@@ -349,12 +338,12 @@
 #     return _fig_to_json(fig)
 
 
-# # ── TOP TRENDS (§6) ───────────────────────────────────────────────────────────
+# # ── TOP TRENDS ───────────────────────────────────────────────────────────────
 
 # def chart_top_bottom_table(df: pd.DataFrame, cat_col: str, num_col: str, n: int = 10):
 #     """Ranked table as a Plotly table — top N and bottom N side by side."""
 #     top    = df.head(n).copy()
-#     bottom = df.tail(n).iloc[::-1].copy()   # reverse so worst is at bottom
+#     bottom = df.tail(n).iloc[::-1].copy()
 #     fig = go.Figure(data=[go.Table(
 #         columnwidth=[3, 2, 3, 2],
 #         header=dict(
@@ -391,7 +380,7 @@
 #     """df cols: 'category', 'value' — treemap gives size intuition"""
 #     df = df.copy()
 #     df['category'] = _trim(df['category'], 22)
-#     df['value']    = df['value'].abs()          # treemap needs positive sizes
+#     df['value']    = df['value'].abs()
 #     fig = px.treemap(
 #         df, path=['category'], values='value',
 #         title=f"Treemap — {num_col} by {cat_col}",
@@ -430,39 +419,40 @@
 #         barmode='overlay',
 #     )
 #     return _fig_to_json(fig)
+
 """
 charts.py  —  All Plotly chart builders.
 """
 import json
 import math
-
+ 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-
+ 
 TEMPLATE  = "plotly_dark"
 COLORS    = px.colors.qualitative.Vivid
 _TRANSP   = "rgba(0,0,0,0)"
 _MAX_CHARS = 18
-
-
+ 
+ 
 def _fig_to_json(fig):
     return json.loads(fig.to_json())
-
-
+ 
+ 
 def _trim(series: pd.Series, n: int = _MAX_CHARS) -> pd.Series:
     return series.astype(str).apply(lambda x: x[:n] + "…" if len(x) > n else x)
-
-
+ 
+ 
 def _cat_axis(fig, n: int, axis: str = 'xaxis'):
     angle = -45 if n > 8 else -30 if n > 5 else 0
     size  = 9   if n > 12 else 10 if n > 8 else 11
     fig.update_layout(**{axis: dict(tickangle=angle, tickfont=dict(size=size))})
     return fig
-
-
+ 
+ 
 # ── SUMMARY ──────────────────────────────────────────────────────────────────
-
+ 
 def chart_column_types_pie(col_types: dict):
     from collections import Counter
     counts = Counter(col_types.values())
@@ -484,8 +474,8 @@ def chart_column_types_pie(col_types: dict):
         margin=dict(t=40, b=20, l=20, r=20),
     )
     return _fig_to_json(fig)
-
-
+ 
+ 
 def chart_null_bar(df_summary: pd.DataFrame):
     df = df_summary[df_summary['nulls'] > 0].copy()
     if df.empty:
@@ -503,10 +493,10 @@ def chart_null_bar(df_summary: pd.DataFrame):
     fig.update_layout(coloraxis_showscale=False)
     _cat_axis(fig, len(df))
     return _fig_to_json(fig)
-
-
+ 
+ 
 # ── CATEGORIES ───────────────────────────────────────────────────────────────
-
+ 
 def chart_bar_counts(df: pd.DataFrame, cat_col: str, top_n: int):
     """df cols: 'category', 'count', 'pct'"""
     df = df.copy()
@@ -522,14 +512,14 @@ def chart_bar_counts(df: pd.DataFrame, cat_col: str, top_n: int):
     fig.update_layout(showlegend=False)
     _cat_axis(fig, len(df))
     return _fig_to_json(fig)
-
-
+ 
+ 
 def chart_pie(df: pd.DataFrame, cat_col: str):
     """df cols: 'category', 'count'"""
     df   = df.copy()
     n    = len(df)
     df['label'] = _trim(df['category'], 22)
-
+ 
     fig = px.pie(
         df, names='label', values='count',
         title=f"Share by {cat_col}",
@@ -553,8 +543,8 @@ def chart_pie(df: pd.DataFrame, cat_col: str):
                    font=dict(size=10), bgcolor=_TRANSP)
         fig.update_layout(legend=leg, margin=dict(t=40,b=20,l=20,r=20), height=360)
     return _fig_to_json(fig)
-
-
+ 
+ 
 def chart_horizontal_bar(df: pd.DataFrame, cat_col: str, num_col: str, agg: str):
     """df cols: 'category', 'value'"""
     df = df.copy()
@@ -575,8 +565,8 @@ def chart_horizontal_bar(df: pd.DataFrame, cat_col: str, num_col: str, agg: str)
     n = len(df)
     fig.update_layout(height=max(320, n * max(22, min(40, 400 // max(n,1))) + 80))
     return _fig_to_json(fig)
-
-
+ 
+ 
 def chart_grouped_bar(df: pd.DataFrame, cat_col: str, num_col: str):
     """df cols: 'category', 'value' — top N vs bottom N"""
     if len(df) < 2:
@@ -598,8 +588,8 @@ def chart_grouped_bar(df: pd.DataFrame, cat_col: str, num_col: str):
     fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
     _cat_axis(fig, len(combined))
     return _fig_to_json(fig)
-
-
+ 
+ 
 def chart_avg_by_category(df: pd.DataFrame, cat_col: str, num_col: str):
     """df cols: 'category', 'value'"""
     df = df.copy()
@@ -619,44 +609,85 @@ def chart_avg_by_category(df: pd.DataFrame, cat_col: str, num_col: str):
     fig.update_layout(coloraxis_showscale=False)
     _cat_axis(fig, len(df))
     return _fig_to_json(fig)
-
-
+ 
+ 
 # ── DISTRIBUTIONS ─────────────────────────────────────────────────────────────
-
+ 
 def chart_histogram(df: pd.DataFrame, num_col: str):
-    """df col: 'value'"""
-    n     = len(df)
-    nbins = min(50, max(10, int(math.sqrt(n))))
-    fig   = px.histogram(
-        df, x='value', nbins=nbins,
+    """
+    df columns: 'bucket', 'count', 'min_v', 'max_v' — one row per bin,
+    already counted across the FULL dataset inside Postgres. We just
+    need to turn bin index -> a readable x-axis range and draw bars.
+    """
+    if df.empty:
+        fig = go.Figure()
+        fig.update_layout(title=f"Distribution of {num_col} (no data)", template=TEMPLATE)
+        return _fig_to_json(fig)
+ 
+    min_v = float(df['min_v'].iloc[0])
+    max_v = float(df['max_v'].iloc[0])
+    n_bins = int(df['bucket'].max()) + 1 if len(df) else 1
+    width = (max_v - min_v) / n_bins if n_bins and max_v > min_v else 1
+ 
+    labels = []
+    for b in df['bucket']:
+        lo = min_v + b * width
+        hi = lo + width
+        labels.append(f"{lo:,.2f}–{hi:,.2f}")
+ 
+    fig = go.Figure(go.Bar(
+        x=labels, y=df['count'],
+        marker_color='#5b7cff',
+    ))
+    fig.update_layout(
         title=f"Distribution of {num_col}",
         template=TEMPLATE,
-        color_discrete_sequence=['#5b7cff'],
-        marginal='rug',
+        bargap=0.05,
+        xaxis_title=num_col,
+        yaxis_title="Row count",
     )
-    fig.update_layout(bargap=0.05)
     return _fig_to_json(fig)
-
-
+ 
+ 
 def chart_box_single(df: pd.DataFrame, num_col: str):
-    """df col: 'value'"""
-    fig = px.box(
-        df, y='value',
+    """
+    df columns: 'min_val', 'q1', 'median', 'q3', 'max_val', 'n' — a single
+    row, computed exactly over the FULL dataset with percentile_cont.
+    Plotly can draw a box plot directly from these five numbers without
+    needing the underlying rows at all.
+    """
+    if df.empty:
+        fig = go.Figure()
+        fig.update_layout(title=f"Spread of {num_col} (no data)", template=TEMPLATE)
+        return _fig_to_json(fig)
+ 
+    row = df.iloc[0]
+    q1, med, q3 = float(row['q1']), float(row['median']), float(row['q3'])
+    iqr = q3 - q1
+    lower_fence = max(float(row['min_val']), q1 - 1.5 * iqr)
+    upper_fence = min(float(row['max_val']), q3 + 1.5 * iqr)
+ 
+    fig = go.Figure(go.Box(
+        q1=[q1], median=[med], q3=[q3],
+        lowerfence=[lower_fence], upperfence=[upper_fence],
+        marker_color='#9d7dfa',
+        name=num_col,
+    ))
+    fig.update_layout(
         title=f"Spread of {num_col}",
         template=TEMPLATE,
-        color_discrete_sequence=['#9d7dfa'],
-        points='outliers',
+        annotations=[dict(
+            text="Box = middle 50% | Line = median | Whiskers = expected range "
+                 "(see the table below for individual outlier rows)",
+            xref="paper", yref="paper", x=0.5, y=-0.15,
+            showarrow=False, font=dict(size=10, color='#8890a8'),
+        )],
     )
-    fig.update_layout(annotations=[dict(
-        text="Box = middle 50% | Line = median | Dots = outliers",
-        xref="paper", yref="paper", x=0.5, y=-0.15,
-        showarrow=False, font=dict(size=10, color='#8890a8'),
-    )])
     return _fig_to_json(fig)
-
-
+ 
+ 
 # ── RELATIONSHIPS ─────────────────────────────────────────────────────────────
-
+ 
 def chart_scatter(df: pd.DataFrame, x_col: str, y_col: str, color_col: str = None):
     """df cols: 'x', 'y' [, 'color']"""
     kwargs = dict(
@@ -677,8 +708,8 @@ def chart_scatter(df: pd.DataFrame, x_col: str, y_col: str, color_col: str = Non
         fig = px.scatter(df, **kwargs)
     fig.update_traces(marker=dict(size=5))
     return _fig_to_json(fig)
-
-
+ 
+ 
 def chart_bubble(df: pd.DataFrame, x_col: str, y_col: str, size_col: str):
     """df cols: 'x', 'y' [, 'size']"""
     if 'size' not in df.columns:
@@ -692,10 +723,10 @@ def chart_bubble(df: pd.DataFrame, x_col: str, y_col: str, size_col: str):
         labels={'x': x_col, 'y': y_col},
     )
     return _fig_to_json(fig)
-
-
+ 
+ 
 # ── TIME TRENDS ───────────────────────────────────────────────────────────────
-
+ 
 def chart_line(df: pd.DataFrame, date_col: str, num_col: str, period: str, agg: str):
     """df cols: 'period', 'value'"""
     n   = len(df)
@@ -712,8 +743,8 @@ def chart_line(df: pd.DataFrame, date_col: str, num_col: str, period: str, agg: 
     fig.update_layout(xaxis=dict(tickangle=-45, nticks=min(24, n),
                                   tickfont=dict(size=9 if n > 24 else 11)))
     return _fig_to_json(fig)
-
-
+ 
+ 
 def chart_mom_change(df: pd.DataFrame, num_col: str):
     """df cols: 'month', 'total', 'pct_change'"""
     df     = df.dropna(subset=['pct_change']).copy()
@@ -736,8 +767,8 @@ def chart_mom_change(df: pd.DataFrame, num_col: str):
         )],
     )
     return _fig_to_json(fig)
-
-
+ 
+ 
 def chart_day_of_week(df: pd.DataFrame, num_col: str):
     """df cols: 'dow_num', 'day_name', 'avg_value'"""
     fig = px.bar(
@@ -750,8 +781,8 @@ def chart_day_of_week(df: pd.DataFrame, num_col: str):
     fig.update_traces(texttemplate='%{text:,.1f}', textposition='outside',
                       marker_color=COLORS[1])
     return _fig_to_json(fig)
-
-
+ 
+ 
 def chart_seasonality(df: pd.DataFrame, num_col: str):
     """df cols: 'month_num', 'month_name', 'avg_value'"""
     fig = px.line(
@@ -770,10 +801,10 @@ def chart_seasonality(df: pd.DataFrame, num_col: str):
                           'Jul','Aug','Sep','Oct','Nov','Dec'],
     })
     return _fig_to_json(fig)
-
-
+ 
+ 
 # ── TOP TRENDS ───────────────────────────────────────────────────────────────
-
+ 
 def chart_top_bottom_table(df: pd.DataFrame, cat_col: str, num_col: str, n: int = 10):
     """Ranked table as a Plotly table — top N and bottom N side by side."""
     top    = df.head(n).copy()
@@ -808,8 +839,8 @@ def chart_top_bottom_table(df: pd.DataFrame, cat_col: str, num_col: str, n: int 
         height=max(300, n * 32 + 80),
     )
     return _fig_to_json(fig)
-
-
+ 
+ 
 def chart_treemap(df: pd.DataFrame, cat_col: str, num_col: str):
     """df cols: 'category', 'value' — treemap gives size intuition"""
     df = df.copy()
@@ -825,8 +856,8 @@ def chart_treemap(df: pd.DataFrame, cat_col: str, num_col: str):
     fig.update_traces(textinfo='label+value+percent root')
     fig.update_layout(coloraxis_showscale=False, margin=dict(t=40,b=10,l=10,r=10))
     return _fig_to_json(fig)
-
-
+ 
+ 
 def chart_running_total(df: pd.DataFrame, date_col: str, num_col: str):
     """df cols: 'day', 'daily_total', 'running_total'"""
     fig = go.Figure()
